@@ -1,6 +1,6 @@
 # Deployment Guide — AWS EC2
 
-Step-by-step guide to deploying the Task Manager API on a fresh AWS EC2 instance.
+Complete step-by-step guide to deploying the Task Manager API on AWS EC2.
 
 ---
 
@@ -12,18 +12,17 @@ Step-by-step guide to deploying the Task Manager API on a fresh AWS EC2 instance
 
 | Type | Protocol | Port | Source |
 |---|---|---|---|
-| SSH | TCP | 22 | Your IP only |
+| SSH | TCP | 22 | My IP (your IP only) |
 | HTTP | TCP | 80 | 0.0.0.0/0 |
 | HTTPS | TCP | 443 | 0.0.0.0/0 |
 
 ---
 
-## 2. Server Provisioning
+## 2. Server Provisioning — Install Docker
 
-SSH into your EC2 instance and run the following:
+SSH into EC2 and run:
 
 ```bash
-# Update packages
 sudo apt update && sudo apt upgrade -y
 
 # Install Docker
@@ -43,10 +42,6 @@ newgrp docker
 
 # Install PostgreSQL client (for backups)
 sudo apt install -y postgresql-client
-
-# Verify
-docker --version
-docker compose version
 ```
 
 ---
@@ -63,135 +58,183 @@ sudo ufw enable
 sudo ufw status verbose
 ```
 
+![UFW Firewall](screenshots/ufw-firewall.png)
+
 ---
 
-## 4. fail2ban (SSH Brute-Force Protection)
+## 4. fail2ban — SSH Brute-Force Protection
 
 ```bash
 sudo apt install -y fail2ban
 
-sudo tee /etc/fail2ban/jail.local << 'EOF'
+sudo tee /etc/fail2ban/jail.local << 'CONF'
 [sshd]
 enabled  = true
 port     = ssh
 maxretry = 5
 bantime  = 3600
 findtime = 600
-EOF
+CONF
 
 sudo systemctl enable fail2ban
 sudo systemctl start fail2ban
 sudo fail2ban-client status sshd
 ```
 
+![fail2ban](screenshots/fail2ban.png)
+
 ---
 
-## 5. Clone the Repository
+## 5. Clone Repository + Configure Environment
 
 ```bash
 git clone https://github.com/him1029g/task-manager-api.git ~/task-manager-api
 cd ~/task-manager-api
 ```
 
----
-
-## 6. Configure Environment
+![Git Clone](screenshots/gitclone-ec2.png)
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Fill in:
-- `DATABASE_URL` — your Neon PostgreSQL connection string
-- `REDIS_URL` — your Upstash Redis connection string
-- `GEMINI_API_KEY` — your Google Gemini API key
+Fill in your values:
+```dotenv
+DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/dbname
+REDIS_URL=rediss://default:token@hostname.upstash.io:6380
+GEMINI_API_KEY=your_gemini_key
+APP_ENV=production
+ALLOWED_ORIGINS=
+```
 
 ---
 
-## 7. Generate SSL Certificate
+## 6. Generate SSL Certificate
 
 ```bash
 chmod +x nginx/generate-ssl.sh
 ./nginx/generate-ssl.sh
-# Certificate created at nginx/ssl/cert.pem and nginx/ssl/key.pem
+ls -la nginx/ssl/
 ```
+
+![NGINX SSL](screenshots/nginx-ssl.png)
 
 ---
 
-## 8. Start the Application
+## 7. Docker Login + Start Application
 
 ```bash
-# Pull the image and start services
+docker login
 docker compose up -d
+docker compose ps
+```
 
-# Watch startup logs
-docker compose logs -f
+![Docker Login](screenshots/docker-login-ec2.png)
 
-# Verify health
+![Docker Compose PS](screenshots/ec2-docker-ps.png)
+
+![Docker Compose Running](screenshots/ece-docker-compose.png)
+
+Verify health:
+```bash
 curl -k https://localhost/health
 ```
 
-Expected response:
-```json
-{
-  "status": "healthy",
-  "dependencies": {
-    "database": {"status": "ok", "latency_ms": 45.2},
-    "redis":    {"status": "ok", "latency_ms": 12.1}
-  }
-}
-```
-
 ---
 
-## 9. Set Up Automated Backups
+## 8. Automated Backups
 
 ```bash
 chmod +x scripts/backup.sh
-
-# Test the backup script manually
 ./scripts/backup.sh
 
-# Add to crontab — runs daily at 2:00 AM UTC
+# Add to crontab — daily at 2 AM UTC
 crontab -e
+# Add: 0 2 * * * /home/ubuntu/task-manager-api/scripts/backup.sh >> /home/ubuntu/backup.log 2>&1
 ```
 
-Add this line:
-```
-0 2 * * * /home/ubuntu/task-manager-api/scripts/backup.sh >> /home/ubuntu/backup.log 2>&1
-```
+![Taking Backup](screenshots/taking-backup.png)
+
+![Backup Scripts](screenshots/backup_scripts.png)
 
 ---
 
-## 10. Configure GitHub Actions
+## 9. GitHub Secrets Setup
 
-In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add:
+Go to: **GitHub Repo → Settings → Secrets and variables → Actions**
 
-| Secret | Where to get it |
+| Secret | Value |
 |---|---|
 | `DOCKERHUB_USERNAME` | Your DockerHub username |
 | `DOCKERHUB_TOKEN` | DockerHub → Account Settings → Security → Access Tokens |
-| `EC2_HOST` | EC2 Public IP (from AWS Console) |
-| `EC2_SSH_KEY` | Content of your EC2 `.pem` key file |
+| `EC2_HOST` | EC2 Public IP |
+| `EC2_SSH_KEY` | Full content of your `.pem` key file |
 
-Also create an **Environment** named `production` in GitHub (Settings → Environments).
+---
 
-Test the pipeline by pushing to `main` or triggering manually from the Actions tab.
+## 10. CI/CD Pipeline Verification
+
+Push to main or trigger manually from GitHub Actions tab.
+
+![GitHub Actions 1](screenshots/github-action-1.png)
+
+![GitHub Actions 2](screenshots/github-action-2.png)
+
+![GitHub Actions 3](screenshots/github-action-3.png)
+
+![GitHub Actions 4](screenshots/github-action-4.png)
+
+**DockerHub — image pushed successfully:**
+
+![DockerHub](screenshots/docker-hub-image.png)
 
 ---
 
 ## Data Persistence
 
-| Data | Storage Location on EC2 |
+| Data | Location on EC2 |
 |---|---|
-| PostgreSQL data | Docker volume `postgres_data` → `/var/lib/docker/volumes/task-manager-api_postgres_data/` |
-| Redis AOF data | Docker volume `redis_data` → `/var/lib/docker/volumes/task-manager-api_redis_data/` |
+| PostgreSQL data | Docker volume `postgres_data` |
+| Redis AOF data | Docker volume `redis_data` |
 | Database backups | `/home/ubuntu/backups/db/` |
 | SSL certificates | `~/task-manager-api/nginx/ssl/` |
 
-Volumes survive `docker compose down` and container recreation. To inspect:
 ```bash
+# Inspect volumes
 docker volume ls
 docker volume inspect task-manager-api_postgres_data
+```
+
+---
+
+## Cloud Services
+
+### Neon — PostgreSQL
+![Neon PostgreSQL](screenshots/cloud-postgres.png)
+
+### Upstash — Redis
+![Upstash Redis](screenshots/cloud-redis.png)
+
+---
+
+## Monitoring
+
+```bash
+# Health check script
+~/health-check.sh
+```
+
+![Health Script](screenshots/ec2-health.sh.png)
+
+```bash
+# Application logs
+docker logs task_api --tail 50
+```
+
+![Docker Logs](screenshots/ec2-docker-logs.png)
+
+```bash
+# Resource usage
+docker stats --no-stream
 ```

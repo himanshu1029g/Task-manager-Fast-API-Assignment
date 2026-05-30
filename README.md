@@ -1,6 +1,32 @@
 # Task Manager API
 
-A production-grade FastAPI application demonstrating DevOps best practices — containerised with Docker, deployed on AWS EC2, secured behind NGINX with TLS, backed by managed cloud services, and delivered via a GitHub Actions CI/CD pipeline.
+> **DevOps Assignment** — A production-grade FastAPI application demonstrating real-world DevOps practices: containerised with Docker, deployed on AWS EC2, secured behind NGINX with TLS, backed by managed cloud services, and delivered via a GitHub Actions CI/CD pipeline.
+
+**Demo Video Part 1 :** [Watch on Loom](https://www.loom.com/share/52c8c9a60285431cba02cc2dab9013e8)
+
+**Demo Video Part 2 :** [Watch on Loom](https://www.loom.com/share/8267eda7a60f44779f8e726cf26ca73b)
+
+---
+
+## Live Screenshots
+
+### Application Running on AWS EC2
+
+![Home Page](docs/screenshots/ec2-ip-home-page.png)
+
+![Home Page with Tasks](docs/screenshots/ec2-ip-home-page-2.png)
+
+### Gemini AI Summary
+
+![AI Summary](docs/screenshots/ec2-ip-gen-ai.png)
+
+### Health Check — All Dependencies OK
+
+![Health Check](docs/screenshots/ec2-ip-health-check.png)
+
+### Swagger API Docs
+
+![Swagger UI](docs/screenshots/ec2-ip-swagger.png)
 
 ---
 
@@ -35,15 +61,56 @@ Internet
 
 | Layer | Technology |
 |---|---|
-| API Framework | FastAPI 0.111 + Uvicorn |
-| Database | PostgreSQL via Neon (managed) |
+| API Framework | FastAPI + Uvicorn (2 workers) |
+| Database | PostgreSQL via Neon (managed, SSL) |
 | Cache | Redis via Upstash (managed, TLS) |
-| AI | Google Gemini 1.5 Flash |
+| AI | Google Gemini 2.5 Flash |
 | Reverse Proxy | NGINX 1.25-alpine |
-| Containerisation | Docker + Docker Compose 3.9 |
+| Containerisation | Docker + Docker Compose |
 | CI/CD | GitHub Actions |
 | Hosting | AWS EC2 (t3.micro, Ubuntu 22.04) |
 | TLS | Self-signed (Let's Encrypt ready) |
+
+---
+
+## Project Structure
+
+![Folder Structure](docs/screenshots/folder-structure.png)
+
+```
+task-manager-api/
+├── app/
+│   ├── main.py          # App init, CORS, lifespan, exception handler
+│   ├── config.py        # Pydantic settings from env vars
+│   ├── database.py      # Async SQLAlchemy engine + session
+│   ├── cache.py         # Redis async client
+│   ├── models.py        # SQLAlchemy Task model
+│   ├── schemas.py       # Pydantic request/response schemas
+│   └── routers/
+│       ├── health.py    # GET /health — DB + Redis latency check
+│       ├── tasks.py     # CRUD /tasks/* with Redis caching
+│       └── ai.py        # GET /ai/summary (Gemini 2.5 Flash)
+├── nginx/
+│   ├── nginx.conf       # Reverse proxy, TLS, security headers, rate limiting
+│   ├── generate-ssl.sh  # Self-signed cert generator
+│   └── ssl/             # Cert files (gitignored)
+├── scripts/
+│   └── backup.sh        # PostgreSQL backup with retention
+├── static/
+│   └── index.html       # Frontend dashboard
+├── docs/
+│   ├── deployment-guide.md
+│   ├── ssl-upgrade.md
+│   ├── troubleshooting.md
+│   └── screenshots/     # All deployment screenshots
+├── .github/workflows/
+│   └── deploy.yml       # CI/CD pipeline
+├── Dockerfile           # Multi-stage build
+├── docker-compose.yml   # Production + local dev profiles
+├── requirements.txt
+├── .env.example
+└── .gitignore
+```
 
 ---
 
@@ -73,34 +140,55 @@ cd task-manager-api
 
 # 2. Set up environment
 cp .env.example .env
-# Edit .env — for local dev use the values below:
+# Edit .env — for local dev use these values:
 #   DATABASE_URL=postgresql://taskuser:taskpass@postgres:5432/taskdb
 #   REDIS_URL=redis://redis:6379
 
 # 3. Start all services (including local postgres + redis)
-docker compose --profile local up -d
+docker compose --profile local up -d --build
 
 # 4. Check health
 curl http://localhost/health
 ```
 
+**Local Docker running:**
+
+![Local Docker](docs/screenshots/local-docker.png)
+
+![Localhost Health](docs/screenshots/localhost-health.png)
+
 ---
 
 ## Production Deployment
 
-See **[docs/deployment-guide.md](docs/deployment-guide.md)** for the full step-by-step EC2 setup.
+See **[docs/deployment-guide.md](docs/deployment-guide.md)** for the complete step-by-step EC2 guide.
 
-Quick summary:
+### EC2 Setup Summary
+
+**Clone & configure on EC2:**
 ```bash
-# On EC2 — first-time setup
 git clone https://github.com/him1029g/task-manager-api.git ~/task-manager-api
 cd ~/task-manager-api
-cp .env.example .env && nano .env          # Fill in production values
-./nginx/generate-ssl.sh                    # Generate self-signed TLS cert
-docker compose up -d                       # Start api + nginx
+cp .env.example .env && nano .env
+./nginx/generate-ssl.sh
+docker compose up -d
 ```
 
-Subsequent deployments are handled automatically by GitHub Actions on every push to `main`.
+![Git Clone on EC2](docs/screenshots/gitclone-ec2.png)
+
+**NGINX SSL certificate generated:**
+
+![NGINX SSL](docs/screenshots/nginx-ssl.png)
+
+**Docker running on EC2:**
+
+![EC2 Docker Compose PS](docs/screenshots/ec2-docker-ps.png)
+
+![EC2 Docker Compose](docs/screenshots/ece-docker-compose.png)
+
+**FastAPI running on EC2:**
+
+![FastAPI EC2](docs/screenshots/fast-api-ec2.png)
 
 ---
 
@@ -113,17 +201,31 @@ git push → main
       │    ├── docker/setup-buildx-action
       │    ├── docker/login-action (DockerHub)
       │    └── docker/build-push-action
-      │         ├── tags: :latest + :<sha>
+      │         ├── tags: :latest + :<commit-sha>
       │         └── BuildKit layer cache (registry)
       │
       └─ Job 2: Deploy to EC2
            ├── SCP: sync docker-compose.yml, nginx.conf, scripts
            ├── SSH: docker compose pull api
            ├── SSH: docker compose up -d --no-deps api
-           ├── Health gate: 12 × 5s retries → rollback on failure
-           ├── nginx -s reload (picks up any config changes)
+           ├── Health gate: 12 × 5s retries → auto rollback on failure
+           ├── nginx -s reload
            └── docker image prune -f
 ```
+
+### GitHub Actions — Pipeline Screenshots
+
+![GitHub Actions 1](docs/screenshots/github-action-1.png)
+
+![GitHub Actions 2](docs/screenshots/github-action-2.png)
+
+![GitHub Actions 3](docs/screenshots/github-action-3.png)
+
+![GitHub Actions 4](docs/screenshots/github-action-4.png)
+
+### DockerHub Image
+
+![DockerHub Image](docs/screenshots/docker-hub-image.png)
 
 **Required GitHub Secrets**
 
@@ -136,41 +238,69 @@ git push → main
 
 ---
 
+## Cloud Services
+
+### PostgreSQL — Neon
+
+![Neon PostgreSQL](docs/screenshots/cloud-postgres.png)
+
+### Redis — Upstash
+
+![Upstash Redis](docs/screenshots/cloud-redis.png)
+
+---
+
 ## Security
 
 - NGINX terminates TLS (TLS 1.2/1.3 only, strong cipher suite)
 - FastAPI is **not** exposed directly — only NGINX ports 80/443 are open
 - Rate limiting: 30 req/min per IP, burst 10 (`limit_req_zone`)
 - Security headers: HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
-- `server_tokens off` — NGINX version hidden
+- `server_tokens off` — NGINX version hidden from responses
 - All containers run as non-root (`appuser` UID 1001)
 - `no-new-privileges:true` on all containers
-- API container runs with read-only root filesystem (`read_only: true`)
-- Secrets managed via `.env` file — never committed to git
-- UFW: only ports 22, 80, 443 allowed (see deployment guide)
-- fail2ban: SSH brute-force protection (see deployment guide)
+- API container runs with read-only root filesystem
+- Secrets in `.env` file — never committed to git
+
+### UFW Firewall
+
+![UFW Firewall](docs/screenshots/ufw-firewall.png)
+
+### fail2ban — SSH Protection
+
+![fail2ban](docs/screenshots/fail2ban.png)
+
+### Docker Login on EC2
+
+![Docker Login EC2](docs/screenshots/docker-login-ec2.png)
 
 ---
 
-## Logging
+## Logging & Monitoring
 
-Application logs are written to stdout in structured format and captured by Docker:
+Application logs are structured and captured by Docker:
 
 ```
-2024-05-30T14:32:01 | INFO     | app.routers.tasks | cache | MISS tasks:all — querying DB
-2024-05-30T14:32:01 | INFO     | app.routers.tasks | tasks | created id=42 title='Deploy app'
+2026-05-30T10:32:01 | INFO     | app.routers.tasks | cache | MISS tasks:all — querying DB
+2026-05-30T10:32:01 | INFO     | app.routers.tasks | tasks | created id=1 title='Deploy app'
 ```
 
 **View logs:**
 ```bash
-docker logs task_api -f --tail 100      # FastAPI logs
-docker logs nginx_proxy -f --tail 100   # NGINX access/error logs
-
-# NGINX access log on EC2 (inside container)
+docker logs task_api -f --tail 100
+docker logs nginx_proxy -f --tail 100
 docker exec nginx_proxy tail -f /var/log/nginx/access.log
 ```
 
-Log rotation is configured via Docker's `json-file` driver (`max-size: 10m`, `max-file: 5`).
+### EC2 Docker Logs
+
+![EC2 Docker Logs](docs/screenshots/ec2-docker-logs.png)
+
+### Health Check Script
+
+![Health Script](docs/screenshots/ec2-health.sh.png)
+
+Log rotation configured via Docker `json-file` driver (`max-size: 10m`, `max-file: 5`).
 
 ---
 
@@ -180,15 +310,21 @@ Log rotation is configured via Docker's `json-file` driver (`max-size: 10m`, `ma
 # Manual backup
 ./scripts/backup.sh
 
-# Automated — add to crontab (daily at 2 AM UTC):
+# Automated — daily at 2 AM UTC
 crontab -e
 # 0 2 * * * /home/ubuntu/task-manager-api/scripts/backup.sh >> /home/ubuntu/backup.log 2>&1
 
-# Restore from backup
+# Restore
 gunzip -c /home/ubuntu/backups/db/taskdb_YYYYMMDD_HHMMSS.sql.gz | psql "$DATABASE_URL"
 ```
 
-Backups are stored in `/home/ubuntu/backups/db/` and retained for 7 days.
+Backups stored in `/home/ubuntu/backups/db/` — retained for 7 days.
+
+### Backup Running
+
+![Taking Backup](docs/screenshots/taking-backup.png)
+
+![Backup Scripts](docs/screenshots/backup_scripts.png)
 
 ---
 
@@ -204,38 +340,11 @@ Backups are stored in `/home/ubuntu/backups/db/` and retained for 7 days.
 
 ---
 
-## Project Structure
+## Documentation
 
-```
-task-manager-api/
-├── app/
-│   ├── main.py          # App init, CORS, lifespan, exception handler
-│   ├── config.py        # Pydantic settings from env vars
-│   ├── database.py      # Async SQLAlchemy engine + session
-│   ├── cache.py         # Redis async client
-│   ├── models.py        # SQLAlchemy Task model
-│   ├── schemas.py       # Pydantic request/response schemas
-│   └── routers/
-│       ├── health.py    # GET /health
-│       ├── tasks.py     # CRUD /tasks/*
-│       └── ai.py        # GET /ai/summary (Gemini)
-├── nginx/
-│   ├── nginx.conf       # Reverse proxy, TLS, security headers, rate limiting
-│   ├── generate-ssl.sh  # Self-signed cert generator
-│   └── ssl/             # Cert files (gitignored)
-├── scripts/
-│   └── backup.sh        # PostgreSQL backup with retention
-├── static/
-│   └── index.html       # Frontend dashboard
-├── docs/
-│   ├── deployment-guide.md
-│   ├── ssl-upgrade.md
-│   └── troubleshooting.md
-├── .github/workflows/
-│   └── deploy.yml       # CI/CD pipeline
-├── Dockerfile           # Multi-stage build
-├── docker-compose.yml   # Production + local profiles
-├── requirements.txt
-├── .env.example
-└── .gitignore
-```
+| Doc | Description |
+|---|---|
+| [Deployment Guide](docs/deployment-guide.md) | Full EC2 setup — Docker, UFW, fail2ban, SSL, cron |
+| [SSL Upgrade Guide](docs/ssl-upgrade.md) | Migrate from self-signed to Let's Encrypt |
+| [Troubleshooting](docs/troubleshooting.md) | Common issues and debug commands |
+
