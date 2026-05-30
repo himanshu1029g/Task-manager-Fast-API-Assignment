@@ -16,10 +16,12 @@ version: '3.9'
 
 services:
 
-  # ── FastAPI Application ─────────────────────────────────────────────────────
+
   api:
-    # image: him1029g/task-manager-api:latest
-    build: .
+  #  for  aws 
+    image: him1029g/task-manager-api:latest 
+    #   build for local 
+    # build: .
     container_name: task_api
     restart: unless-stopped
     env_file: .env
