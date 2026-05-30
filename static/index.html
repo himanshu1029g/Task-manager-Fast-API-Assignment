@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Task Manager | DevOps Assignment</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #162032;
+      --border: #2d3f55;
+      --text: #f1f5f9;
+      --muted: #7a90a8;
+      --primary: #6366f1;
+      --primary-glow: rgba(99,102,241,0.15);
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.9rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .logo .accent { color: var(--primary); }
+
+    .status-bar { display: flex; gap: 1.25rem; font-size: 0.78rem; }
+
+    .chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      font-weight: 500;
+    }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-green { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .dot-red   { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+    .dot-pulse {
+      background: var(--warning);
+      animation: blink 1.2s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── Layout ── */
+    main {
+      max-width: 860px;
+      margin: 2rem auto;
+      padding: 0 1.25rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 1.1rem;
+    }
+
+    /* ── Add form ── */
+    .add-row {
+      display: flex;
+      gap: 0.65rem;
+      margin-bottom: 1.1rem;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 0.9rem;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input[type="text"]::placeholder { color: var(--muted); }
+    input[type="text"]:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+      padding: 0.6rem 1.1rem;
+      white-space: nowrap;
+    }
+    button:active { transform: scale(.97); }
+    button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+    .btn-primary  { background: var(--primary); color: #fff; }
+    .btn-danger   { background: transparent; border: 1px solid var(--danger); color: var(--danger); padding: 0.35rem 0.7rem; font-size: 0.78rem; }
+    .btn-ai       { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+
+    /* ── Task list ── */
+    .task-list { display: flex; flex-direction: column; gap: 0.55rem; }
+
+    .task-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.8rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      transition: border-color .15s;
+    }
+    .task-item:hover { border-color: var(--primary); }
+    .task-item.done { opacity: .5; }
+    .task-item.done .title { text-decoration: line-through; }
+
+    .task-check {
+      width: 16px; height: 16px;
+      cursor: pointer;
+      accent-color: var(--primary);
+      flex-shrink: 0;
+    }
+
+    .task-body { flex: 1; min-width: 0; }
+    .title { font-size: 0.9rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .desc  { font-size: 0.78rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .badge {
+      font-size: 0.7rem; font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .badge-pending { background: rgba(245,158,11,.12); color: var(--warning); }
+    .badge-done    { background: rgba(34,197,94,.12);  color: var(--success); }
+
+    /* ── AI section ── */
+    .ai-box {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--primary);
+      border-radius: 9px;
+      font-size: 0.9rem;
+      line-height: 1.7;
+      display: none;
+    }
+
+    .ai-meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+      display: flex;
+      gap: 1rem;
+    }
+
+    /* ── Misc ── */
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 2.5rem 1rem;
+      font-size: 0.9rem;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.78rem;
+      padding: 1.5rem;
+      border-top: 1px solid var(--border);
+      margin-top: 1rem;
+    }
+    footer a { color: var(--primary); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⚡ Task<span class="accent">Manager</span></div>
+  <div class="status-bar">
+    <div class="chip" id="db-chip">
+      <span class="dot dot-pulse"></span>
+      <span id="db-label">DB...</span>
+    </div>
+    <div class="chip" id="redis-chip">
+      <span class="dot dot-pulse"></span>
+      <span id="redis-label">Redis...</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- Tasks card -->
+  <div class="card">
+    <div class="card-title">📋 Tasks</div>
+    <div class="add-row">
+      <input id="inp-title" type="text" placeholder="Task title…" />
+      <input id="inp-desc"  type="text" placeholder="Description (optional)" />
+      <button class="btn-primary" id="btn-add" onclick="addTask()">+ Add</button>
+    </div>
+    <div class="task-list" id="task-list">
+      <div class="empty">Loading…</div>
+    </div>
+  </div>
+
+  <!-- AI card -->
+  <div class="card">
+    <div class="card-title">🤖 Gemini AI Summary</div>
+    <button class="btn-ai" id="btn-ai" onclick="getAISummary()">Generate Summary</button>
+    <div class="ai-box" id="ai-box">
+      <div class="ai-meta" id="ai-meta"></div>
+      <div id="ai-text"></div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  DevOps Assignment — FastAPI · PostgreSQL (Neon) · Redis (Upstash) · NGINX |
+  <a href="https://github.com/himanshu1029g" target="_blank">@himanshu1029g</a> |
+  <a href="/docs" target="_blank">API Docs ↗</a>
+</footer>
+
+<script>
+  // ── helpers ────────────────────────────────────────────────────────────────
+  const esc = t => {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(t));
+    return d.innerHTML;
+  };
+
+  const setDot = (el, ok) => {
+    el.className = 'dot ' + (ok ? 'dot-green' : 'dot-red');
+  };
+
+  // ── health ─────────────────────────────────────────────────────────────────
+  async function checkHealth() {
+    try {
+      const r = await fetch('/health');
+      const d = await r.json();
+      const dbOk    = d.database === 'ok';
+      const redisOk = d.redis    === 'ok';
+
+      document.querySelector('#db-chip .dot').className    = 'dot ' + (dbOk    ? 'dot-green' : 'dot-red');
+      document.querySelector('#redis-chip .dot').className = 'dot ' + (redisOk ? 'dot-green' : 'dot-red');
+      document.getElementById('db-label').textContent    = dbOk    ? 'DB OK'    : 'DB Error';
+      document.getElementById('redis-label').textContent = redisOk ? 'Redis OK' : 'Redis Error';
+    } catch {
+      ['db-chip','redis-chip'].forEach(id => {
+        document.querySelector(`#${id} .dot`).className = 'dot dot-red';
+      });
+      document.getElementById('db-label').textContent    = 'Offline';
+      document.getElementById('redis-label').textContent = 'Offline';
+    }
+  }
+
+  // ── tasks ──────────────────────────────────────────────────────────────────
+  async function loadTasks() {
+    try {
+      const r  = await fetch('/tasks/');
+      const ts = await r.json();
+      render(ts);
+    } catch {
+      document.getElementById('task-list').innerHTML =
+        '<div class="empty">⚠️ Failed to load tasks</div>';
+    }
+  }
+
+  function render(tasks) {
+    const el = document.getElementById('task-list');
+    if (!tasks.length) {
+      el.innerHTML = '<div class="empty">No tasks yet — add one above 👆</div>';
+      return;
+    }
+    el.innerHTML = tasks.map(t => `
+      <div class="task-item ${t.completed ? 'done' : ''}" id="t${t.id}">
+        <input class="task-check" type="checkbox" ${t.completed ? 'checked' : ''}
+               onchange="toggle(${t.id}, this.checked)" />
+        <div class="task-body">
+          <div class="title">${esc(t.title)}</div>
+          ${t.description ? `<div class="desc">${esc(t.description)}</div>` : ''}
+        </div>
+        <span class="badge ${t.completed ? 'badge-done' : 'badge-pending'}">
+          ${t.completed ? '✓ Done' : '⏳ Pending'}
+        </span>
+        <button class="btn-danger" onclick="del(${t.id})">✕</button>
+      </div>
+    `).join('');
+  }
+
+  async function addTask() {
+    const title = document.getElementById('inp-title').value.trim();
+    const desc  = document.getElementById('inp-desc').value.trim();
+    if (!title) { document.getElementById('inp-title').focus(); return; }
+
+    const btn = document.getElementById('btn-add');
+    btn.disabled = true;
+
+    await fetch('/tasks/', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ title, description: desc || null }),
+    });
+
+    document.getElementById('inp-title').value = '';
+    document.getElementById('inp-desc').value  = '';
+    btn.disabled = false;
+    loadTasks();
+  }
+
+  async function toggle(id, completed) {
+    await fetch(`/tasks/${id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ completed }),
+    });
+    loadTasks();
+  }
+
+  async function del(id) {
+    await fetch(`/tasks/${id}`, { method: 'DELETE' });
+    loadTasks();
+  }
+
+  // ── AI ─────────────────────────────────────────────────────────────────────
+  async function getAISummary() {
+    const btn  = document.getElementById('btn-ai');
+    const box  = document.getElementById('ai-box');
+    const meta = document.getElementById('ai-meta');
+    const txt  = document.getElementById('ai-text');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Generating…';
+    box.style.display = 'block';
+    txt.textContent  = 'Gemini is thinking…';
+    meta.textContent = '';
+
+    try {
+      const r = await fetch('/ai/summary');
+      const d = await r.json();
+      meta.innerHTML = `<span>📊 ${d.task_count} tasks</span><span>✅ ${d.completed} done</span><span>⏳ ${d.pending} pending</span>`;
+      txt.textContent = d.summary;
+    } catch {
+      txt.textContent = '⚠️ Failed to get AI summary. Check GEMINI_API_KEY.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Generate Summary';
+    }
+  }
+
+  // ── enter key ──────────────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('inp-title').addEventListener('keydown', e => {
+      if (e.key === 'Enter') addTask();
+    });
+    checkHealth();
+    loadTasks();
+    setInterval(checkHealth, 30_000);
+  });
+</script>
+</body>
+</html>
