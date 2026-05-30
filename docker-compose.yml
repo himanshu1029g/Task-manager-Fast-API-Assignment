@@ -1,0 +1,136 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Task Manager API — Docker Compose
+#
+# PRODUCTION:  docker compose up -d
+#   → starts api + nginx only.
+#   → DATABASE_URL (Neon) and REDIS_URL (Upstash) come from .env
+#
+# LOCAL DEV:   docker compose --profile local up -d
+#   → also starts postgres + redis containers.
+#   → update .env:
+#       DATABASE_URL=postgresql://taskuser:taskpass@postgres:5432/taskdb
+#       REDIS_URL=redis://redis:6379
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: '3.9'
+
+services:
+
+  # ── FastAPI Application ─────────────────────────────────────────────────────
+  api:
+    image: him1029g/task-manager-api:latest
+    container_name: task_api
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - app_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # Security: read-only root filesystem, no new privileges
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp                  # Allow writes to /tmp only
+
+  # ── NGINX Reverse Proxy ─────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nginx_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx    # Writable cache dir for nginx
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - app_net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # ── PostgreSQL (LOCAL DEV only) ─────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: local_postgres
+    profiles: ["local"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       taskdb
+      POSTGRES_USER:     taskuser
+      POSTGRES_PASSWORD: taskpass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"            # Not exposed to host — only accessible within app_net
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskuser -d taskdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  # ── Redis (LOCAL DEV only) ──────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: local_redis
+    profiles: ["local"]
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    expose:
+      - "6379"            # Not exposed to host — only accessible within app_net
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+    driver: local           # Data survives container recreation
+  redis_data:
+    driver: local           # AOF persistence survives container recreation
+  nginx_cache:
+    driver: local
+
+networks:
+  app_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24   # Explicit subnet — avoids Docker default overlap
