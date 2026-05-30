@@ -279,7 +279,7 @@
 </footer>
 
 <script>
-  // ── helpers ────────────────────────────────────────────────────────────────
+
   const esc = t => {
     const d = document.createElement('div');
     d.appendChild(document.createTextNode(t));
@@ -290,13 +290,13 @@
     el.className = 'dot ' + (ok ? 'dot-green' : 'dot-red');
   };
 
-  // ── health ─────────────────────────────────────────────────────────────────
+  // ── health 
   async function checkHealth() {
     try {
       const r = await fetch('/health');
       const d = await r.json();
-      const dbOk    = d.database === 'ok';
-      const redisOk = d.redis    === 'ok';
+      const dbOk    = d.dependencies.database.status === 'ok';
+      const redisOk = d.dependencies.redis.status    === 'ok';
 
       document.querySelector('#db-chip .dot').className    = 'dot ' + (dbOk    ? 'dot-green' : 'dot-red');
       document.querySelector('#redis-chip .dot').className = 'dot ' + (redisOk ? 'dot-green' : 'dot-red');
@@ -311,7 +311,7 @@
     }
   }
 
-  // ── tasks ──────────────────────────────────────────────────────────────────
+  // ── tasks 
   async function loadTasks() {
     try {
       const r  = await fetch('/tasks/');
@@ -379,7 +379,7 @@
     loadTasks();
   }
 
-  // ── AI ─────────────────────────────────────────────────────────────────────
+  // ── AI 
   async function getAISummary() {
     const btn  = document.getElementById('btn-ai');
     const box  = document.getElementById('ai-box');
@@ -405,7 +405,7 @@
     }
   }
 
-  // ── enter key ──────────────────────────────────────────────────────────────
+  // ── enter key 
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('inp-title').addEventListener('keydown', e => {
       if (e.key === 'Enter') addTask();

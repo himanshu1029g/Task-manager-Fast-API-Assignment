@@ -1,0 +1,122 @@
+name: CI/CD — Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:       # Allow manual trigger from GitHub UI
+
+env:
+  IMAGE: him1029g/task-manager-api
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 1 — Build & Push Docker image to DockerHub
+  # ───────────────────────────────────────────────────────────────────────────
+  build:
+    name:  Build & Push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to:   type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Sync config files + Deploy to EC2
+  # ───────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: 🚀 Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+
+    steps:
+      # ── Step 1: Sync infrastructure files to EC2 ──────────────────────────
+      # This ensures nginx.conf, docker-compose.yml, scripts etc. are always
+      # up to date on the server — not just the Docker image.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Sync config files to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          source:   "docker-compose.yml,nginx/nginx.conf,scripts/backup.sh,.env.example"
+          target:   "/home/ubuntu/task-manager-api"
+          strip_components: 0
+
+      # ── Step 2: Pull new image + restart ──────────────────────────────────
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host:     ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key:      ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            echo "══════════════════════════════════════"
+            echo " Deploying task-manager-api"
+            echo " Commit : ${{ github.sha }}"
+            echo " Time   : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "══════════════════════════════════════"
+
+            cd ~/task-manager-api
+
+            # Fix script permissions after sync
+            chmod +x scripts/backup.sh nginx/generate-ssl.sh
+
+            # Pull latest image from DockerHub
+            docker compose pull api
+
+            # Zero-downtime: restart only the api container; nginx stays up
+            docker compose up -d --no-deps api
+
+            # ── Health gate — wait up to 60s for container to become healthy ──
+            echo "Waiting for health check..."
+            HEALTHY=false
+            for i in {1..12}; do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' task_api 2>/dev/null || echo "missing")
+              echo "  Attempt $i/12: $STATUS"
+              if [ "$STATUS" = "healthy" ]; then
+                HEALTHY=true
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "$HEALTHY" = "false" ]; then
+              echo "❌ Health check failed after 60s — rolling back"
+              docker compose up -d --no-deps --pull never api || true
+              exit 1
+            fi
+
+            echo "✅ API healthy — reloading nginx config"
+            docker compose exec -T nginx nginx -s reload
+
+            # Clean up dangling images to reclaim disk space
+            docker image prune -f
+
+            echo "══════════════════════════════════════"
+            echo " Deploy complete at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "══════════════════════════════════════"

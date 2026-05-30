@@ -12,14 +12,16 @@ DATABASE_URL = (
     .replace("postgresql://", "postgresql+asyncpg://")
 )
 
+_connect_args = {"ssl": "require"} if "neon.tech" in DATABASE_URL else {}
+
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     pool_size=5,
     max_overflow=10,
-    pool_pre_ping=True,      # Drop stale connections before using them
-    pool_recycle=1800,       # Recycle connections every 30 min (avoids Neon idle timeouts)
-    connect_args={"ssl": "require"},
+    pool_pre_ping=True,
+    pool_recycle=1800,
+    connect_args=_connect_args,
 )
 
 AsyncSessionLocal = sessionmaker(
